@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -23,22 +21,20 @@ namespace HeartRate
     class HeartRateService : IDisposable
     {
         // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.heart_rate_measurement.xml
-        private const int _heartRateMeasurementCharacteristicId = 0x2A37;
+        private const int m_heartRateMeasurementCharacteristicId = 0x2A37;
 
-        private GattDeviceService _service;
-        private readonly object _disposeSync = new object();
-        private bool _isDisposed;
+        private GattDeviceService m_service;
+        private readonly object m_disposeSync = new object();
+        private bool m_isDisposed;
 
         public event HeartRateUpdateEventHandler HeartRateUpdated;
         public delegate void HeartRateUpdateEventHandler(ContactSensorStatus status, int bpm);
 
         public void InitiateDefault()
         {
-            var heartrateSelector = GattDeviceService
-                .GetDeviceSelectorFromUuid(GattServiceUuids.HeartRate);
+            var heartrateSelector = GattDeviceService.GetDeviceSelectorFromUuid(GattServiceUuids.HeartRate);
 
-            var devices = AsyncResult(DeviceInformation
-                .FindAllAsync(heartrateSelector));
+            var devices = AsyncResult(DeviceInformation.FindAllAsync(heartrateSelector));
 
             var device = devices.FirstOrDefault();
 
@@ -50,24 +46,22 @@ namespace HeartRate
 
             GattDeviceService service;
 
-            lock (_disposeSync)
+            lock (m_disposeSync)
             {
-                if (_isDisposed)
-                {
+                if (m_isDisposed)
                     throw new ObjectDisposedException(GetType().Name);
-                }
 
                 Cleanup();
 
                 service = AsyncResult(GattDeviceService.FromIdAsync(device.Id));
 
-                _service = service;
+                m_service = service;
             }
 
+            // Get heart rate characteristic
             var heartrate = service.GetCharacteristics(
-                GattDeviceService.ConvertShortIdToUuid(
-                    _heartRateMeasurementCharacteristicId))
-                .FirstOrDefault();
+                GattDeviceService.ConvertShortIdToUuid(m_heartRateMeasurementCharacteristicId)
+                ).FirstOrDefault();
 
             if (heartrate == null)
             {
@@ -91,17 +85,27 @@ namespace HeartRate
             var value = args.CharacteristicValue;
 
             if (value.Length == 0)
-            {
                 return;
-            }
 
             using (var reader = DataReader.FromBuffer(value))
             {
                 var bpm = -1;
-                var flags = reader.ReadByte();
-                var isshort = (flags & 1) == 1;
-                var contactSensor = (ContactSensorStatus)((flags >> 1) & 3);
-                var minLength = isshort ? 3 : 2;
+                /*
+                Flags: bit 0, 1 bit
+                    0 = Heart Rate Value Format is set to UINT8. Units: beats per minute (bpm)                 
+                    1 = Heart Rate Value Format is set to UINT16. Units: beats per minute (bpm)
+                 */
+                var Flags = reader.ReadByte();
+                var bIsUint16 = (Flags & 1) == 1;
+                /*
+                Flags: bit 1, 2 bits
+                    0 = Sensor Contact feature is not supported in the current connection
+                    1 = Sensor Contact feature is not supported in the current connection
+                    2 = Sensor Contact feature is supported, but contact is not detected
+                    3 = Sensor Contact feature is supported and contact is detected
+                */
+                var contactSensor = (ContactSensorStatus)((Flags >> 1) & 3);
+                var minLength = bIsUint16 ? 3 : 2;
 
                 if (value.Length < minLength)
                 {
@@ -111,12 +115,12 @@ namespace HeartRate
 
                 if (value.Length > 1)
                 {
-                    bpm = isshort
+                    bpm = bIsUint16
                         ? reader.ReadUInt16()
                         : reader.ReadByte();
                 }
 
-                Debug.WriteLine($"Read {flags.ToString("X")} {contactSensor} {bpm}");
+                Debug.WriteLine($"Read {Flags.ToString("X")} {contactSensor} {bpm}");
 
                 HeartRateUpdated?.Invoke(contactSensor, bpm);
             }
@@ -124,12 +128,10 @@ namespace HeartRate
 
         private void Cleanup()
         {
-            var service = Interlocked.Exchange(ref _service, null);
+            var service = Interlocked.Exchange(ref m_service, null);
 
             if (service == null)
-            {
                 return;
-            }
 
             try
             {
@@ -144,9 +146,11 @@ namespace HeartRate
             {
                 switch (async.Status)
                 {
+                    // Give some time after the async operation has started
                     case AsyncStatus.Started:
                         Thread.Sleep(100);
                         continue;
+                    // Get the results
                     case AsyncStatus.Completed:
                         return async.GetResults();
                     case AsyncStatus.Error:
@@ -159,9 +163,9 @@ namespace HeartRate
 
         public void Dispose()
         {
-            lock (_disposeSync)
+            lock (m_disposeSync)
             {
-                _isDisposed = true;
+                m_isDisposed = true;
 
                 Cleanup();
             }
