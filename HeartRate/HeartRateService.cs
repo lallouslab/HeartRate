@@ -18,7 +18,7 @@ namespace HeartRate
         Contact
     }
 
-    class HeartRateService : IDisposable
+    class HeartRateService: IDisposable
     {
         // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.heart_rate_measurement.xml
         private const int m_heartRateMeasurementCharacteristicId = 0x2A37;
@@ -147,7 +147,8 @@ namespace HeartRate
                 switch (async.Status)
                 {
                     // Give some time after the async operation has started
-                    case AsyncStatus.Started:
+                    //case AsyncStatus.Started:
+                    default:
                         Thread.Sleep(100);
                         continue;
                     // Get the results

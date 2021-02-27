@@ -58,9 +58,7 @@ namespace HeartRate
             var protocol = HeartRateSettingsProtocol.Load();
 
             if (protocol == null)
-            {
                 return;
-            }
 
             FontName = protocol.FontName;
             UIFontName = protocol.UIFontName;
